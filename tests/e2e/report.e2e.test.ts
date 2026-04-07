@@ -462,6 +462,140 @@ describe('Reports E2E', () => {
     });
   });
 
+  // ── File download via signed URL ──────────────────────────────────────────
+
+  describe('GET /files/:id', () => {
+    let accessUrl: string;
+    let fileId: string;
+
+    beforeAll(async () => {
+      // Upload a file first to get a signed URL
+      const res = await request(app)
+        .post(`/reports/${reportId}/attachment`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', Buffer.from('file download test'), {
+          filename: 'download.pdf',
+          contentType: 'application/pdf',
+        });
+
+      accessUrl = res.body.accessUrl;
+      fileId = res.body.attachment.id;
+    });
+
+    it('200 — downloads file with valid signed token', async () => {
+      const url = new URL(accessUrl);
+      const res = await request(app).get(`${url.pathname}?${url.searchParams.toString()}`);
+      expect(res.status).toBe(200);
+    });
+
+    it('401 — rejects request without token', async () => {
+      const res = await request(app).get(`/files/${fileId}`);
+      expect(res.status).toBe(401);
+    });
+
+    it('401 — rejects request with invalid token', async () => {
+      const res = await request(app).get(`/files/${fileId}?token=bad.jwt.token`);
+      expect(res.status).toBe(401);
+    });
+
+    it('401 — rejects token for a different fileId', async () => {
+      const url = new URL(accessUrl);
+      const tokenParam = url.searchParams.get('token');
+      const res = await request(app).get(`/files/wrong-id?token=${tokenParam}`);
+      expect(res.status).toBe(401);
+    });
+  });
+
+  // ── Sorting entries by priority ─────────────────────────────────────────────
+
+  describe('GET /reports/:id (sort by priority)', () => {
+    let sortReportId: string;
+
+    beforeAll(async () => {
+      const entries = [
+        { id: 'low1', title: 'Low', content: '', priority: 'LOW', author: 'u1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'high1', title: 'High', content: '', priority: 'HIGH', author: 'u1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: 'med1', title: 'Med', content: '', priority: 'MEDIUM', author: 'u1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ];
+
+      const res = await request(app)
+        .post('/reports')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Sort Test Report', entries });
+
+      sortReportId = res.body.id;
+    });
+
+    it('200 — sorts entries by priority desc', async () => {
+      const res = await request(app)
+        .get(`/reports/${sortReportId}?include=entries&sortBy=priority&order=desc`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      const priorities = res.body.entries.map((e: { priority: string }) => e.priority);
+      expect(priorities).toEqual(['HIGH', 'MEDIUM', 'LOW']);
+    });
+
+    it('200 — sorts entries by priority asc', async () => {
+      const res = await request(app)
+        .get(`/reports/${sortReportId}?include=entries&sortBy=priority&order=asc`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      const priorities = res.body.entries.map((e: { priority: string }) => e.priority);
+      expect(priorities).toEqual(['LOW', 'MEDIUM', 'HIGH']);
+    });
+
+    it('200 — metrics show ON_TRACK when no high-priority entries', async () => {
+      // Create a report with only low/medium entries
+      const createRes = await request(app)
+        .post('/reports')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          title: 'On Track Report',
+          status: 'IN_PROGRESS',
+          entries: [
+            { id: 'e1', title: 'E1', content: '', priority: 'LOW', author: 'u1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          ],
+        });
+
+      const res = await request(app)
+        .get(`/reports/${createRes.body.id}?include=metrics`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.metrics.derivedStatus).toBe('ON_TRACK');
+    });
+
+    it('200 — metrics show NEEDS_ATTENTION with high-priority entries', async () => {
+      const res = await request(app)
+        .get(`/reports/${sortReportId}?include=metrics`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.metrics.derivedStatus).toBe('NEEDS_ATTENTION');
+    });
+
+    it('200 — metrics derivedStatus shows FINALIZED for finalized report', async () => {
+      const createRes = await request(app)
+        .post('/reports')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Finalized Metrics Report' });
+
+      await request(app)
+        .put(`/reports/${createRes.body.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ version: 1, status: 'FINALIZED' });
+
+      const res = await request(app)
+        .get(`/reports/${createRes.body.id}?include=metrics`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.metrics.derivedStatus).toBe('FINALIZED');
+    });
+  });
+
   // ── Health ─────────────────────────────────────────────────────────────────
 
   describe('GET /health', () => {
