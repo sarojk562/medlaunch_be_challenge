@@ -3,7 +3,12 @@ import { ZodError } from 'zod';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { Role } from '../utils/token.util';
 import { createReportSchema } from '../validation/report.validation';
-import { ReportService, DuplicateReportError } from '../services/report.service';
+import { parseGetReportQuery } from '../validation/report-query.validation';
+import {
+  ReportService,
+  DuplicateReportError,
+  ReportNotFoundError,
+} from '../services/report.service';
 import { logger } from '../utils/logger';
 
 export function reportController(reportService: ReportService): Router {
@@ -49,6 +54,30 @@ export function reportController(reportService: ReportService): Router {
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Something went wrong' });
     }
   });
+
+  // ── GET /reports/:id ─────────────────────────────────────────────────────
+
+  router.get(
+    '/:id',
+    authenticate,
+    authorize(Role.READER, Role.EDITOR),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+        const query = parseGetReportQuery(req.query as Record<string, unknown>);
+        const result = await reportService.getReportById(id, query);
+        res.json(result);
+      } catch (err) {
+        if (err instanceof ReportNotFoundError) {
+          res.status(404).json({ code: err.code, message: err.message });
+          return;
+        }
+
+        logger.error({ err }, 'Unexpected error fetching report');
+        res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Something went wrong' });
+      }
+    },
+  );
 
   return router;
 }
