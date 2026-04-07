@@ -14,14 +14,21 @@ A production-grade REST API for managing structured reports with nested entries,
 - **Response shaping** — callers choose which fields to include, with server-side pagination
 - **Comprehensive test suite** — unit tests and end-to-end tests (Jest + Supertest)
 
----
+## Design Highlights
+
+For the full design document with architecture decisions, tradeoffs, and production evolution paths, see **[design.md](design.md)**.
+
+Key design decisions explored in depth:
+
+- **Async processing** — at-least-once delivery semantics, idempotent consumers, transactional outbox pattern, crash recovery analysis
+- **Persistence strategy** — migration mapping for MongoDB and PostgreSQL, indexing strategy, cursor-based pagination, transaction considerations
+- **Business rule extensibility** — pluggable `BusinessRule` interface, evolution path from hardcoded rules → admin-managed → external policy engine (OPA)
+- **Production readiness** — caching with stampede mitigation, adaptive rate limiting, event-driven architecture, graceful shutdown
 
 ## Prerequisites
 
 - **Node.js** >= 20
 - **npm** >= 10
-
----
 
 ## Setup
 
@@ -36,7 +43,7 @@ npm install
 # Start in development mode (hot-reload)
 npm run dev
 
-# --- OR ---
+# OR
 
 # Build and start in production mode
 npm run build
@@ -48,8 +55,6 @@ The server starts on port **3000** by default. Override with:
 ```bash
 PORT=8080 npm run dev
 ```
-
----
 
 ## Authentication
 
@@ -78,8 +83,6 @@ node -e "
 | `EDITOR` | Create, read, update reports; upload files     |
 | `READER` | Read reports only                              |
 
----
-
 ## API Endpoints
 
 ### Health Check
@@ -91,8 +94,6 @@ GET /health
 ```json
 { "status": "ok" }
 ```
-
----
 
 ### Create Report
 
@@ -156,8 +157,6 @@ curl -s -X POST http://localhost:3000/reports \
 }
 ```
 
----
-
 ### Get Report
 
 ```
@@ -208,8 +207,6 @@ curl -s "http://localhost:3000/reports/$REPORT_ID?include=entries,metrics&entrie
 }
 ```
 
----
-
 ### Update Report
 
 ```
@@ -241,8 +238,6 @@ curl -s -X PUT http://localhost:3000/reports/$REPORT_ID \
 ```
 
 **Response:** `200 OK` — returns the full updated report with `version` incremented.
-
----
 
 ### Upload Attachment
 
@@ -286,8 +281,6 @@ curl -s -X POST http://localhost:3000/reports/$REPORT_ID/attachment \
 
 The `accessUrl` contains a signed token that expires after 5 minutes. The `storagePath` is intentionally omitted from the response.
 
----
-
 ### Download File
 
 ```
@@ -295,8 +288,6 @@ GET /files/:id?token=<signed-token>
 ```
 
 No `Authorization` header needed — the signed query-string token is sufficient. The server validates the token and prevents path-traversal attacks before serving the file.
-
----
 
 ## Error Responses
 
@@ -320,8 +311,6 @@ All errors follow a consistent shape:
 | `CONFLICT`                 | 409         | Duplicate title or version mismatch           |
 | `INTERNAL_ERROR`           | 500         | Unexpected server error                       |
 
----
-
 ## Running Tests
 
 ```bash
@@ -344,8 +333,6 @@ tests/
     └── report.e2e.test.ts     # Full HTTP round-trips via Supertest
 ```
 
----
-
 ## Scripts Reference
 
 | Command              | Description                                |
@@ -357,8 +344,6 @@ tests/
 | `npm run test:coverage` | Run tests with coverage                 |
 | `npm run lint`       | ESLint check on `src/`                     |
 | `npm run format`     | Prettier format `src/`                     |
-
----
 
 ## Project Structure
 
