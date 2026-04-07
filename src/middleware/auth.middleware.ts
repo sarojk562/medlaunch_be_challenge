@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { Role, verifyToken } from '../utils/token.util';
+import { UnauthorizedError, ForbiddenError } from '../errors/app-error';
 import { logger } from '../utils/logger';
 
-export function authenticate(req: Request, res: Response, next: NextFunction): void {
+export function authenticate(req: Request, _res: Response, next: NextFunction): void {
   const header = req.headers.authorization;
 
   if (!header?.startsWith('Bearer ')) {
-    res.status(401).json({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+    next(new UnauthorizedError());
     return;
   }
 
@@ -16,22 +17,23 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     req.user = verifyToken(token);
     next();
   } catch (err) {
-    logger.warn({ err }, 'Token verification failed');
-    res.status(401).json({ code: 'UNAUTHORIZED', message: 'Invalid or expired token' });
+    const log = logger.child({ requestId: req.requestId });
+    log.warn({ err }, 'Token verification failed');
+    next(new UnauthorizedError('Invalid or expired token'));
   }
 }
 
 export function authorize(...requiredRoles: Role[]) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     const user = req.user;
 
     if (!user) {
-      res.status(401).json({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+      next(new UnauthorizedError());
       return;
     }
 
     if (!requiredRoles.includes(user.role)) {
-      res.status(403).json({ code: 'FORBIDDEN', message: 'Insufficient permissions' });
+      next(new ForbiddenError());
       return;
     }
 

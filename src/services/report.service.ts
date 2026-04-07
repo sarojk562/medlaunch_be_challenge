@@ -8,6 +8,7 @@ import { AuditService } from './audit.service';
 import { IFileStorageService, StoredFile } from './file-storage.service';
 import { enqueueJob } from './async-job.service';
 import { logger } from '../utils/logger';
+import { NotFoundError, ConflictError, ForbiddenError } from '../errors/app-error';
 
 // ── Computed metrics shape ───────────────────────────────────────────────────
 
@@ -330,42 +331,33 @@ export class ReportService {
   }
 }
 
-export class ReportNotFoundError extends Error {
-  public readonly code = 'NOT_FOUND' as const;
-
+export class ReportNotFoundError extends NotFoundError {
   constructor(id: string) {
     super(`Report "${id}" not found`);
-    this.name = 'ReportNotFoundError';
   }
 }
 
-export class DuplicateReportError extends Error {
-  public readonly code = 'DUPLICATE_RESOURCE' as const;
-
+export class DuplicateReportError extends ConflictError {
   constructor(title: string, createdBy: string) {
     super(`A report titled "${title}" already exists for user "${createdBy}"`);
-    this.name = 'DuplicateReportError';
   }
 }
 
-export class VersionConflictError extends Error {
-  public readonly code = 'CONFLICT' as const;
-
+export class VersionConflictError extends ConflictError {
   constructor(
     id: string,
     public readonly expected: number,
     public readonly actual: number,
   ) {
-    super(`Version conflict on report "${id}": expected ${expected}, current is ${actual}`);
-    this.name = 'VersionConflictError';
+    super(`Version conflict on report "${id}": expected ${expected}, current is ${actual}`, {
+      expected,
+      actual,
+    });
   }
 }
 
-export class ReportFinalizedError extends Error {
-  public readonly code = 'FORBIDDEN' as const;
-
+export class ReportFinalizedError extends ForbiddenError {
   constructor(id: string, status: string) {
     super(`Report "${id}" cannot be updated while in "${status}" status`);
-    this.name = 'ReportFinalizedError';
   }
 }
