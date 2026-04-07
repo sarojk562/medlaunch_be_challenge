@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Report, Priority, ReportStatus } from '../models';
+import { Report, Priority, ReportStatus, Attachment } from '../models';
 import { Entry } from '../models/entry.model';
 import { IReportRepository } from '../repositories';
 import { CreateReportInput, UpdateReportInput } from '../validation/report.validation';
 import { GetReportQuery } from '../validation/report-query.validation';
 import { AuditService } from './audit.service';
+import { IFileStorageService, StoredFile } from './file-storage.service';
 import { enqueueJob } from './async-job.service';
 import { logger } from '../utils/logger';
 
@@ -59,6 +60,7 @@ export class ReportService {
   constructor(
     private readonly repo: IReportRepository,
     private readonly audit: AuditService,
+    private readonly fileStorage: IFileStorageService,
   ) {}
 
   async createReport(input: CreateReportInput): Promise<Report> {
@@ -136,6 +138,51 @@ export class ReportService {
     });
 
     return updated;
+  }
+
+  async addAttachment(
+    reportId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    userId: string,
+    baseUrl: string,
+  ): Promise<{ attachment: Attachment; accessUrl: string }> {
+    const report = await this.repo.findById(reportId);
+    if (!report) {
+      throw new ReportNotFoundError(reportId);
+    }
+
+    this.assertNotFinalized(report);
+
+    const stored: StoredFile = await this.fileStorage.save(file);
+
+    const attachment: Attachment = {
+      id: stored.fileId,
+      fileName: stored.originalName,
+      mimeType: stored.mimeType,
+      size: stored.size,
+      storagePath: stored.storagePath,
+      uploadedAt: new Date(),
+    };
+
+    await this.repo.update(reportId, {
+      attachments: [...report.attachments, attachment],
+    });
+
+    this.audit.record({
+      reportId,
+      userId,
+      action: 'UPDATE',
+      timestamp: new Date(),
+      before: null,
+      after: { attachments: [attachment] } as Partial<Report>,
+      changedFields: ['attachments'],
+    });
+
+    const accessUrl = this.fileStorage.generateAccessUrl(stored.fileId, baseUrl);
+
+    logger.info({ reportId, fileId: stored.fileId, fileName: stored.originalName }, 'Attachment added to report');
+
+    return { attachment, accessUrl };
   }
 
   // ── Private: helpers ────────────────────────────────────────────────────────
