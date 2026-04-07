@@ -13,13 +13,19 @@ export interface StoredFile {
 }
 
 export interface IFileStorageService {
-  save(file: { buffer: Buffer; originalname: string; mimetype: string; size: number }): Promise<StoredFile>;
+  save(file: {
+    buffer: Buffer;
+    originalname: string;
+    mimetype: string;
+    size: number;
+  }): Promise<StoredFile>;
   getFilePath(fileId: string): Promise<string | null>;
   generateAccessUrl(fileId: string, baseUrl: string): string;
   verifyAccessToken(token: string): { fileId: string } | null;
 }
 
-const FILE_TOKEN_SECRET = process.env.FILE_TOKEN_SECRET || 'file-access-secret-change-in-production';
+const FILE_TOKEN_SECRET =
+  process.env.FILE_TOKEN_SECRET || 'file-access-secret-change-in-production';
 const ACCESS_TOKEN_EXPIRY_SECONDS = 300; // 5 minutes
 
 export class LocalFileStorageService implements IFileStorageService {

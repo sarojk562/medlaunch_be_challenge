@@ -91,7 +91,13 @@ export function reportController(reportService: ReportService): Router {
         }
 
         const payload = updateReportSchema.parse(body);
-        const updated = await reportService.updateReport(id, payload, version, user.userId, user.role);
+        const updated = await reportService.updateReport(
+          id,
+          payload,
+          version,
+          user.userId,
+          user.role,
+        );
 
         const log = logger.child({ requestId: req.requestId });
         log.info({ reportId: id, version: updated.version }, 'Report updated');

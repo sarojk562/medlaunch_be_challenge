@@ -132,10 +132,7 @@ export class ReportService {
 
     // Track finalizedAt when status transitions to FINALIZED
     const effectivePayload = { ...payload } as Partial<Report>;
-    if (
-      payload.status === ReportStatus.FINALIZED &&
-      existing.status !== ReportStatus.FINALIZED
-    ) {
+    if (payload.status === ReportStatus.FINALIZED && existing.status !== ReportStatus.FINALIZED) {
       effectivePayload.finalizedAt = new Date();
     }
     // Clear finalizedAt if transitioning away from FINALIZED
@@ -204,7 +201,10 @@ export class ReportService {
 
     const accessUrl = this.fileStorage.generateAccessUrl(stored.fileId, baseUrl);
 
-    logger.info({ reportId, fileId: stored.fileId, fileName: stored.originalName }, 'Attachment added to report');
+    logger.info(
+      { reportId, fileId: stored.fileId, fileName: stored.originalName },
+      'Attachment added to report',
+    );
 
     return { attachment, accessUrl };
   }
@@ -331,16 +331,19 @@ export class ReportService {
       derivedStatus = 'ON_TRACK';
     }
 
-    return { totalEntries: entries.length, highPriorityCount, lastUpdatedEntryTimestamp, derivedStatus };
+    return {
+      totalEntries: entries.length,
+      highPriorityCount,
+      lastUpdatedEntryTimestamp,
+      derivedStatus,
+    };
   }
 
   // ── Private: invariants ─────────────────────────────────────────────────────
 
   private async assertUniqueTitlePerUser(createdBy: string, title: string): Promise<void> {
     const existing = await this.repo.list({ createdBy });
-    const duplicate = existing.find(
-      (r) => r.title.toLowerCase() === title.toLowerCase(),
-    );
+    const duplicate = existing.find((r) => r.title.toLowerCase() === title.toLowerCase());
 
     if (duplicate) {
       throw new DuplicateReportError(title, createdBy);

@@ -30,7 +30,10 @@ export function parseGetReportQuery(raw: Record<string, unknown>): GetReportQuer
   const view: ViewMode = VALID_VIEWS.has(viewRaw) ? (viewRaw as ViewMode) : 'full';
 
   const entriesPage = Math.max(1, parseInt(String(raw.entriesPage ?? '1'), 10) || 1);
-  const entriesSize = Math.min(100, Math.max(1, parseInt(String(raw.entriesSize ?? '20'), 10) || 20));
+  const entriesSize = Math.min(
+    100,
+    Math.max(1, parseInt(String(raw.entriesSize ?? '20'), 10) || 20),
+  );
 
   const sortByRaw = typeof raw.sortBy === 'string' ? raw.sortBy : 'createdAt';
   const sortBy: EntrySortField = VALID_SORT_FIELDS.has(sortByRaw)
@@ -41,9 +44,10 @@ export function parseGetReportQuery(raw: Record<string, unknown>): GetReportQuer
   const order: SortOrder = VALID_ORDERS.has(orderRaw) ? (orderRaw as SortOrder) : 'desc';
 
   const priorityRaw = typeof raw.priority === 'string' ? raw.priority.toUpperCase() : undefined;
-  const priorityFilter = priorityRaw && Object.values(Priority).includes(priorityRaw as Priority)
-    ? (priorityRaw as Priority)
-    : undefined;
+  const priorityFilter =
+    priorityRaw && Object.values(Priority).includes(priorityRaw as Priority)
+      ? (priorityRaw as Priority)
+      : undefined;
 
   return { include, view, entriesPage, entriesSize, sortBy, order, priorityFilter };
 }

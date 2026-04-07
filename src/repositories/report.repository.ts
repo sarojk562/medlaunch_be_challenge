@@ -10,7 +10,10 @@ export interface ReportListFilters {
 export interface IReportRepository {
   create(report: Report): Promise<Report>;
   findById(id: string): Promise<Report | null>;
-  update(id: string, payload: Partial<Omit<Report, 'id' | 'createdBy' | 'createdAt'>>): Promise<Report>;
+  update(
+    id: string,
+    payload: Partial<Omit<Report, 'id' | 'createdBy' | 'createdAt'>>,
+  ): Promise<Report>;
   delete(id: string): Promise<boolean>;
   list(filters?: ReportListFilters): Promise<Report[]>;
 }
