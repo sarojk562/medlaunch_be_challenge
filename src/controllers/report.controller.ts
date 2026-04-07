@@ -2,12 +2,14 @@ import { Router, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { Role } from '../utils/token.util';
-import { createReportSchema } from '../validation/report.validation';
+import { createReportSchema, updateReportSchema } from '../validation/report.validation';
 import { parseGetReportQuery } from '../validation/report-query.validation';
 import {
   ReportService,
   DuplicateReportError,
   ReportNotFoundError,
+  VersionConflictError,
+  ReportFinalizedError,
 } from '../services/report.service';
 import { logger } from '../utils/logger';
 
@@ -78,6 +80,73 @@ export function reportController(reportService: ReportService): Router {
       }
     },
   );
+
+  // ── PUT /reports/:id ─────────────────────────────────────────────────────
+
+  router.put('/:id', authenticate, authorize(Role.EDITOR), async (req: Request, res: Response) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        res.status(401).json({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+        return;
+      }
+
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      const { version, ...body } = req.body;
+      if (typeof version !== 'number') {
+        res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: 'Field "version" (number) is required for optimistic concurrency control',
+        });
+        return;
+      }
+
+      const payload = updateReportSchema.parse(body);
+      const updated = await reportService.updateReport(id, payload, version, user.userId);
+
+      logger.info({ reportId: id, version: updated.version }, 'Report updated');
+
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid request body',
+          details: err.issues,
+        });
+        return;
+      }
+
+      if (err instanceof ReportNotFoundError) {
+        res.status(404).json({ code: err.code, message: err.message });
+        return;
+      }
+
+      if (err instanceof VersionConflictError) {
+        res.status(409).json({
+          code: err.code,
+          message: err.message,
+          expected: err.expected,
+          actual: err.actual,
+        });
+        return;
+      }
+
+      if (err instanceof ReportFinalizedError) {
+        res.status(403).json({ code: err.code, message: err.message });
+        return;
+      }
+
+      if (err instanceof DuplicateReportError) {
+        res.status(409).json({ code: err.code, message: err.message });
+        return;
+      }
+
+      logger.error({ err }, 'Unexpected error updating report');
+      res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Something went wrong' });
+    }
+  });
 
   return router;
 }

@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Report, Priority, ReportStatus } from '../models';
 import { Entry } from '../models/entry.model';
 import { IReportRepository } from '../repositories';
-import { CreateReportInput } from '../validation/report.validation';
+import { CreateReportInput, UpdateReportInput } from '../validation/report.validation';
 import { GetReportQuery } from '../validation/report-query.validation';
+import { AuditService } from './audit.service';
 import { enqueueJob } from './async-job.service';
 import { logger } from '../utils/logger';
 
@@ -55,7 +56,10 @@ export interface SummaryReport {
 }
 
 export class ReportService {
-  constructor(private readonly repo: IReportRepository) {}
+  constructor(
+    private readonly repo: IReportRepository,
+    private readonly audit: AuditService,
+  ) {}
 
   async createReport(input: CreateReportInput): Promise<Report> {
     await this.assertUniqueTitlePerUser(input.createdBy, input.title);
@@ -94,6 +98,62 @@ export class ReportService {
     }
 
     return this.buildShapedReport(report, query);
+  }
+
+  async updateReport(
+    id: string,
+    payload: UpdateReportInput,
+    expectedVersion: number,
+    userId: string,
+  ): Promise<Report> {
+    const existing = await this.repo.findById(id);
+    if (!existing) {
+      throw new ReportNotFoundError(id);
+    }
+
+    this.assertNotFinalized(existing);
+
+    if (existing.version !== expectedVersion) {
+      throw new VersionConflictError(id, expectedVersion, existing.version);
+    }
+
+    // If title is changing, enforce uniqueness
+    if (payload.title && payload.title.toLowerCase() !== existing.title.toLowerCase()) {
+      await this.assertUniqueTitlePerUser(existing.createdBy, payload.title);
+    }
+
+    const updated = await this.repo.update(id, payload);
+
+    const changedFields = Object.keys(payload);
+    this.audit.record({
+      reportId: id,
+      userId,
+      action: 'UPDATE',
+      timestamp: new Date(),
+      before: this.pickFields(existing, changedFields),
+      after: this.pickFields(updated, changedFields),
+      changedFields,
+    });
+
+    return updated;
+  }
+
+  // ── Private: helpers ────────────────────────────────────────────────────────
+
+  private pickFields(report: Report, fields: string[]): Partial<Report> {
+    const picked: Record<string, unknown> = {};
+    for (const field of fields) {
+      if (field in report) {
+        picked[field] = report[field as keyof Report];
+      }
+    }
+    return picked as Partial<Report>;
+  }
+
+  private assertNotFinalized(report: Report): void {
+    if (report.status === ReportStatus.FINALIZED || report.status === ReportStatus.ARCHIVED) {
+      throw new ReportFinalizedError(report.id, report.status);
+    }
   }
 
   // ── Private: shaping ────────────────────────────────────────────────────────
@@ -238,5 +298,27 @@ export class DuplicateReportError extends Error {
   constructor(title: string, createdBy: string) {
     super(`A report titled "${title}" already exists for user "${createdBy}"`);
     this.name = 'DuplicateReportError';
+  }
+}
+
+export class VersionConflictError extends Error {
+  public readonly code = 'CONFLICT' as const;
+
+  constructor(
+    id: string,
+    public readonly expected: number,
+    public readonly actual: number,
+  ) {
+    super(`Version conflict on report "${id}": expected ${expected}, current is ${actual}`);
+    this.name = 'VersionConflictError';
+  }
+}
+
+export class ReportFinalizedError extends Error {
+  public readonly code = 'FORBIDDEN' as const;
+
+  constructor(id: string, status: string) {
+    super(`Report "${id}" cannot be updated while in "${status}" status`);
+    this.name = 'ReportFinalizedError';
   }
 }

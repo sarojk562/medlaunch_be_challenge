@@ -2,6 +2,7 @@ import express from 'express';
 import { requestLogger } from './middleware/requestLogger';
 import { reportController } from './controllers/report.controller';
 import { ReportService } from './services/report.service';
+import { AuditService } from './services/audit.service';
 import { InMemoryReportRepository } from './repositories';
 
 const app = express();
@@ -11,7 +12,8 @@ app.use(requestLogger);
 
 // ── Dependencies ─────────────────────────────────────────────────────────────
 const reportRepository = new InMemoryReportRepository();
-const reportService = new ReportService(reportRepository);
+const auditService = new AuditService();
+const reportService = new ReportService(reportRepository, auditService);
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
