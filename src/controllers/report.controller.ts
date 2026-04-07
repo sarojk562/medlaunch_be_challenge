@@ -91,7 +91,7 @@ export function reportController(reportService: ReportService): Router {
         }
 
         const payload = updateReportSchema.parse(body);
-        const updated = await reportService.updateReport(id, payload, version, user.userId);
+        const updated = await reportService.updateReport(id, payload, version, user.userId, user.role);
 
         const log = logger.child({ requestId: req.requestId });
         log.info({ reportId: id, version: updated.version }, 'Report updated');
@@ -129,7 +129,7 @@ export function reportController(reportService: ReportService): Router {
         }
 
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const result = await reportService.addAttachment(id, file, user.userId, baseUrl);
+        const result = await reportService.addAttachment(id, file, user.userId, user.role, baseUrl);
 
         const log = logger.child({ requestId: req.requestId });
         log.info({ reportId: id, fileId: result.attachment.id }, 'Attachment uploaded');

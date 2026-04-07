@@ -59,4 +59,5 @@ export const SAMPLE_REPORT: Report = {
   version: 3,
   createdAt: new Date('2025-10-28T08:00:00Z'),
   updatedAt: new Date('2025-11-15T10:30:00Z'),
+  finalizedAt: null,
 };

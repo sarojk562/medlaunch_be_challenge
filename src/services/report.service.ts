@@ -8,7 +8,9 @@ import { AuditService } from './audit.service';
 import { IFileStorageService, StoredFile } from './file-storage.service';
 import { enqueueJob } from './async-job.service';
 import { logger } from '../utils/logger';
-import { NotFoundError, ConflictError, ForbiddenError } from '../errors/app-error';
+import { NotFoundError, ConflictError } from '../errors/app-error';
+import { Role } from '../utils/token.util';
+import { enforceUpdateRules } from '../rules/report-rules';
 
 // ── Computed metrics shape ───────────────────────────────────────────────────
 
@@ -74,6 +76,7 @@ export class ReportService {
       version: 1,
       createdAt: now,
       updatedAt: now,
+      finalizedAt: input.status === ReportStatus.FINALIZED ? now : null,
     };
 
     const created = await this.repo.create(report);
@@ -108,13 +111,15 @@ export class ReportService {
     payload: UpdateReportInput,
     expectedVersion: number,
     userId: string,
+    userRole: Role,
   ): Promise<Report> {
     const existing = await this.repo.findById(id);
     if (!existing) {
       throw new ReportNotFoundError(id);
     }
 
-    this.assertNotFinalized(existing);
+    // Enforce business rules (replaces the old assertNotFinalized check)
+    enforceUpdateRules(existing, { userId, userRole });
 
     if (existing.version !== expectedVersion) {
       throw new VersionConflictError(id, expectedVersion, existing.version);
@@ -125,7 +130,24 @@ export class ReportService {
       await this.assertUniqueTitlePerUser(existing.createdBy, payload.title);
     }
 
-    const updated = await this.repo.update(id, payload);
+    // Track finalizedAt when status transitions to FINALIZED
+    const effectivePayload = { ...payload } as Partial<Report>;
+    if (
+      payload.status === ReportStatus.FINALIZED &&
+      existing.status !== ReportStatus.FINALIZED
+    ) {
+      effectivePayload.finalizedAt = new Date();
+    }
+    // Clear finalizedAt if transitioning away from FINALIZED
+    if (
+      payload.status &&
+      payload.status !== ReportStatus.FINALIZED &&
+      existing.status === ReportStatus.FINALIZED
+    ) {
+      effectivePayload.finalizedAt = null;
+    }
+
+    const updated = await this.repo.update(id, effectivePayload);
 
     const changedFields = Object.keys(payload);
     this.audit.record({
@@ -145,6 +167,7 @@ export class ReportService {
     reportId: string,
     file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
     userId: string,
+    userRole: Role,
     baseUrl: string,
   ): Promise<{ attachment: Attachment; accessUrl: string }> {
     const report = await this.repo.findById(reportId);
@@ -152,7 +175,7 @@ export class ReportService {
       throw new ReportNotFoundError(reportId);
     }
 
-    this.assertNotFinalized(report);
+    enforceUpdateRules(report, { userId, userRole });
 
     const stored: StoredFile = await this.fileStorage.save(file);
 
@@ -196,12 +219,6 @@ export class ReportService {
       }
     }
     return picked as Partial<Report>;
-  }
-
-  private assertNotFinalized(report: Report): void {
-    if (report.status === ReportStatus.FINALIZED || report.status === ReportStatus.ARCHIVED) {
-      throw new ReportFinalizedError(report.id, report.status);
-    }
   }
 
   // ── Private: shaping ────────────────────────────────────────────────────────
@@ -353,11 +370,5 @@ export class VersionConflictError extends ConflictError {
       expected,
       actual,
     });
-  }
-}
-
-export class ReportFinalizedError extends ForbiddenError {
-  constructor(id: string, status: string) {
-    super(`Report "${id}" cannot be updated while in "${status}" status`);
   }
 }

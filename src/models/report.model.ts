@@ -22,4 +22,5 @@ export interface Report {
   version: number;
   createdAt: Date;
   updatedAt: Date;
+  finalizedAt: Date | null;
 }
